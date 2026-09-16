@@ -21,7 +21,7 @@ source .env
 tailscale serve --bg --https="${PORTAINER_HTTPS_PORT}" "https+insecure://127.0.0.1:${PORTAINER_HTTPS_PORT}"
 tailscale serve --bg --https="${VAULTWARDEN_HTTP_PORT}" "http://127.0.0.1:${VAULTWARDEN_HTTP_PORT}"
 tailscale serve --bg --https="${PIHOLE_HTTP_PORT}" "http://127.0.0.1:${PIHOLE_HTTP_PORT}"
-tailscale serve --bg --https=20128 "http://127.0.0.1:20128"
-tailscale serve --bg --https=443 "http://127.0.0.1:${NEXTCLOUD_HTTP_PORT}"
+tailscale serve --bg --https="${OMNIROUTE_PORT}" "http://127.0.0.1:${OMNIROUTE_PORT}"
+tailscale serve --bg --https="${NEXTCLOUD_HTTPS_PORT}" "http://127.0.0.1:${NEXTCLOUD_HTTP_PORT}"
 
 docker compose up

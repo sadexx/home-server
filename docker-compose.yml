@@ -1,14 +1,14 @@
 services:
   portainer:
-    image: portainer/portainer-ce:lts
+    image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     ports:
-      - "127.0.0.1:${PORTAINER_HTTPS_PORT}:9443"
+      - "127.0.0.1:${PORTAINER_HTTPS_PORT}:${PORTAINER_HTTPS_PORT}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./data/portainer:/data
     networks:
       - lan
@@ -47,7 +47,7 @@ services:
       FTLCONF_dns_listeningMode: 'ALL'
     volumes:
       - ./data/pihole/etc-pihole:/etc/pihole
-      - ./data/pihole/etc-dnsmasq.d:/etc/dnsmsq.d
+      - ./data/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
     cap_add:
       - NET_ADMIN
     networks:
@@ -60,14 +60,14 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "127.0.0.1:20128:20128"
+      - "127.0.0.1:${OMNIROUTE_PORT}:${OMNIROUTE_PORT}"
     environment:
       JWT_SECRET: ${OMNIROUTE_JWT_SECRET}
       API_KEY_SECRET: ${OMNIROUTE_API_KEY_SECRET}
       INITIAL_PASSWORD: ${OMNIROUTE_INITIAL_PASSWORD}
       STORAGE_ENCRYPTION_KEY: ${OMNIROUTE_STORAGE_ENCRYPTION_KEY}
       DATA_DIR: /data
-      PORT: 20128
+      PORT: ${OMNIROUTE_PORT}
       NODE_ENV: production
       AUTH_COOKIE_SECURE: true
       REQUIRE_API_KEY: true
@@ -109,6 +109,7 @@ services:
       - ./data/nextcloud/data:/var/www/html/data
     networks:
       - lan
+      - nextcloud-internal
 
   nextcloud-cron:
     image: nextcloud:apache
@@ -127,6 +128,7 @@ services:
       - ./data/nextcloud/data:/var/www/html/data
     networks:
       - lan
+      - nextcloud-internal
 
   nextcloud-db:
     image: postgres:16-alpine
@@ -146,7 +148,7 @@ services:
     volumes:
       - ./data/nextcloud_db:/var/lib/postgresql/data
     networks:
-      - lan
+      - nextcloud-internal
 
   nextcloud-redis:
     image: redis:7-alpine
@@ -163,9 +165,13 @@ services:
     volumes:
       - ./data/nextcloud_redis:/data
     networks:
-      - lan
+      - nextcloud-internal
 
 networks:
    lan:
      name: lan
      driver: bridge
+   nextcloud-internal:
+     name: nextcloud-internal
+     driver: bridge
+     internal: true
