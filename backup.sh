@@ -26,46 +26,111 @@ is_restic_repo_initialized() {
   restic snapshots -r "$RESTIC_REPOSITORY" > /dev/null 2>&1
 }
 
+is_restic_password_set() {
+  [[ -n "${RESTIC_PASSWORD:-}" && "${RESTIC_PASSWORD}" != "CHANGE_ME" ]]
+}
+
 check () {
-  is_rclone_remote_configured && is_restic_repo_initialized
+  is_rclone_remote_configured && is_restic_repo_initialized && is_restic_password_set
+}
+
+init_restic_repo() {
+  local init_output
+  if init_output=$(restic init -r "$RESTIC_REPOSITORY" 2>&1); then
+    echo "Repository initialized: ${RESTIC_REPOSITORY}"
+    return 0
+  fi
+
+  if echo "$init_output" | grep -qi "config file already exists"; then
+    echo "Repository already exists at ${RESTIC_REPOSITORY}"
+    if ! is_restic_repo_initialized; then
+      echo "ERROR: repository exists, but RESTIC_PASSWORD in .env does not match it"
+      echo "If this is the same repository from a previous attempt, check whether the password changed"
+      echo "If this is meant to be a new repository, use different path in RESTIC_REPOSITORY"
+      return 1
+    fi
+    return 0
+  fi
+
+  echo "ERROR initializing restic repository:"
+  echo "$init_output"
+  return 1
 }
 
 configure() {
-  command -v rclone > /dev/null || { echo "rclone not installed"; exit 1; }
-  command -v restic > /dev/null || { echo "restic not installed"; exit 1; }
+  command -v rclone > /dev/null || { echo "rclone not installed. sudo -v ; curl https://rclone.org/install.sh | sudo bash"; exit 1; }
+  command -v restic > /dev/null || { echo "restic not installed. See https://restic.net/#installation"; exit 1; }
+
+  if ! is_restic_password_set; then
+    echo "ERROR: RESTIC_PASSWORD is not set in .env (or is still CHANGE_ME)"
+    echo "Generate one with: openssl rand -base64 32"
+    echo "Store the value somewhere OTHER than this server - losing it makes backups unrecoverable."
+    return 1
+  fi
 
   if ! is_rclone_remote_configured; then
     echo "Remote '${RCLONE_REMOTE}' not found. Launching rclone config..."
     rclone config
+    if ! is_rclone_remote_configured; then
+      echo "ERROR: remote '${RCLONE_REMOTE}' still not found after rclone config."
+      echo "Check that the remote name you just created matches RCLONE_REMOTE in .env"
+      return 1
+    fi
   fi
 
   if ! is_restic_repo_initialized; then
     echo "Initializing restic-repository: ${RESTIC_REPOSITORY}"
-    restic init -r "${RESTIC_REPOSITORY}"
+    init_restic_repo || return 1
   fi
 
-  read -rp "Initialize cron-job for backup at 6 PM? [y/N] " ans
-  [[ "${ans:-}" == "y" ]] && install_cron_job
+  if command -v crontab > /dev/null; then
+    read -rp "Install cron-job for daily backup at 6 PM? [y/N] " ans
+    [[ "${ans:-}" == "y" ]] && install_cron_job
+  else
+    echo "crontab not found - skipping schedule setup"
+    echo "Install a cron package for your distro, then run ./backup.sh --configure again"
+  fi
 
-  echo "Installation complete"
+  if check; then
+    echo "Configuration complete"
+  else
+    echo "Configuration is not fully complete. Review the messages above and run ./backup.sh --configure again"
+    return 1
+  fi
 }
 
 install_cron_job() {
+  if ! command -v crontab > /dev/null; then
+    echo "crontab not found. Install a cron package for your distro"
+    return 1
+  fi
+
   local script_path
   script_path="$(readlink -f "${BASH_SOURCE[0]}")"
   local cron_line="0 18 * * * ${script_path} run >> $(dirname "${script_path}")/backup.log 2>&1"
 
   if crontab -l 2>/dev/null | grep -qF "$script_path run"; then
-    echo "This cron-job already exists, skipping"
+    echo "Cron job already exists, skipping"
     return
   fi
 
   (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
-  echo "Cron-job successfully initialized: every day at 6 PM. You can check: crontab -l"
+  echo "Cron job installed: every day at 6 PM. Check with: crontab -l"
+
+  if ! pgrep -x 'cron|crond' > /dev/null 2>&1; then
+    echo "WARNING: crontab is installed, but no cron/crond process appears to be running"
+    echo "The job will not execute until the daemon is started via your init system"
+  fi
 }
 
 run() {
+  local lock_file="/tmp/homeserver-backup.lock"
+  exec 200>"$lock_file"
+  flock -n 200 || { echo "Another backup run is already in progress, exiting"; exit 1; }
+
   mkdir -p "$DUMP_DIR"
+
+  trap 'rm -f "${DUMP_DIR}/nextcloud_db.sql"' EXIT
 
   echo "pg_dump nextcloud_db..."
   docker exec nextcloud_db pg_dump -U "${NEXTCLOUD_DB_USER}" "${NEXTCLOUD_DB_NAME}" > "${DUMP_DIR}/nextcloud_db.sql"
@@ -75,8 +140,6 @@ run() {
 
   echo "restic forget --prune (retention: ${BACKUP_RETENTION_DAILY} days)..."
   restic forget -r "$RESTIC_REPOSITORY" --keep-daily "${BACKUP_RETENTION_DAILY}" --prune
-
-  rm -f "${DUMP_DIR}/nextcloud_db.sql"
 }
 
 case "${1:-}" in
