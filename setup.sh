@@ -14,7 +14,9 @@ mkdir -p \
   data/nextcloud_db \
   data/nextcloud_redis
 
-chown -R 1000:1000 data/omniroute
+export PUID="$(id -u)"
+export PGID="$(id -g)"
+chown -R $PUID:$PGID data/omniroute
 
 source .env
 

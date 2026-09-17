@@ -59,6 +59,7 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    user: "${PUID}:${PGID}"
     ports:
       - "127.0.0.1:${OMNIROUTE_PORT}:${OMNIROUTE_PORT}"
     environment:
