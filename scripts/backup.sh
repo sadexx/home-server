@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+source ./scripts/lib/resolve-user.sh
+resolve_target_user
+
+export RCLONE_CONFIG="${TARGET_HOME}/.config/rclone/rclone.conf"
 
 set -a
 source .env
@@ -88,13 +94,13 @@ configure() {
     [[ "${ans:-}" == "y" ]] && install_cron_job
   else
     echo "crontab not found - skipping schedule setup"
-    echo "Install a cron package for your distro, then run ./backup.sh --configure again"
+    echo "Install a cron package for your distro, then run ./scripts/backup.sh --configure again"
   fi
 
   if check; then
     echo "Configuration complete"
   else
-    echo "Configuration is not fully complete. Review the messages above and run ./backup.sh --configure again"
+    echo "Configuration is not fully complete. Review the messages above and run ./scripts/backup.sh --configure again"
     return 1
   fi
 }
@@ -109,13 +115,13 @@ install_cron_job() {
   script_path="$(readlink -f "${BASH_SOURCE[0]}")"
   local cron_line="0 18 * * * ${script_path} run >> $(dirname "${script_path}")/backup.log 2>&1"
 
-  if crontab -l 2>/dev/null | grep -qF "$script_path run"; then
+  if crontab -u "$TARGET_USER" -l 2>/dev/null | grep -qF "$script_path run"; then
     echo "Cron job already exists, skipping"
     return
   fi
 
-  (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
-  echo "Cron job installed: every day at 6 PM. Check with: crontab -l"
+  (crontab -u "$TARGET_USER" -l 2>/dev/null; echo "$cron_line") | crontab -u "$TARGET_USER" -
+  echo "Cron job installed for ${TARGET_USER}: every day at 6 PM. Check with: crontab -u ${TARGET_USER} -l"
 
   if ! pgrep -x 'cron|crond' > /dev/null 2>&1; then
     echo "WARNING: crontab is installed, but no cron/crond process appears to be running"
@@ -134,7 +140,7 @@ run() {
 
   echo "pg_dump nextcloud_db..."
   docker exec nextcloud_db pg_dump -U "${NEXTCLOUD_DB_USER}" "${NEXTCLOUD_DB_NAME}" > "${DUMP_DIR}/nextcloud_db.sql"
-  
+
   echo "restic backup..."
   restic backup -r "$RESTIC_REPOSITORY" "${BACKUP_PATHS[@]}"
 

@@ -3,6 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+source ./scripts/resolve-user.sh
+resolve_target_user
+
 mkdir -p \
   data/portainer \
   data/vaultwarden \
@@ -14,8 +17,8 @@ mkdir -p \
   data/nextcloud_db \
   data/nextcloud_redis
 
-export PUID="$(id -u)"
-export PGID="$(id -g)"
+export PUID="$(id -u "$TARGET_USER")"
+export PGID="$(id -g "$TARGET_USER")"
 chown -R $PUID:$PGID data/omniroute
 
 source .env
@@ -28,7 +31,7 @@ tailscale serve --bg --https="${NEXTCLOUD_HTTPS_PORT}" "http://127.0.0.1:${NEXTC
 
 if [ -t 0 ] && ! ./backup.sh --check; then
   read -rp "Backups not configured. Configure now? [y/N] " ans
-  [[ "${ans:-}" == "y" ]] && ./backup.sh --configure
+  [[ "${ans:-}" == "y" ]] && ./scripts/backup.sh --configure
 fi
 
 docker compose pull
