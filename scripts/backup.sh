@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-source ./scripts/lib/resolve-user.sh
+source ./scripts/resolve-user.sh
 resolve_target_user
 
 export RCLONE_CONFIG="${TARGET_HOME}/.config/rclone/rclone.conf"
@@ -36,8 +36,21 @@ is_restic_password_set() {
   [[ -n "${RESTIC_PASSWORD:-}" && "${RESTIC_PASSWORD}" != "CHANGE_ME" ]]
 }
 
+is_cron_job_installed() {
+  command -v crontab > /dev/null || return 1
+  local script_path
+  script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+
+  local crontab_cmd=(crontab)
+  if [[ "$(id -u)" -eq 0 && "$TARGET_USER" != "root" ]]; then
+    crontab_cmd=(crontab -u "$TARGET_USER")
+  fi
+
+  "${crontab_cmd[@]}" -l 2>/dev/null | grep -qF "$script_path run"
+}
+
 check () {
-  is_rclone_remote_configured && is_restic_repo_initialized && is_restic_password_set
+  is_rclone_remote_configured && is_restic_repo_initialized && is_restic_password_set && is_cron_job_installed
 }
 
 init_restic_repo() {
@@ -91,7 +104,9 @@ configure() {
 
   if command -v crontab > /dev/null; then
     read -rp "Install cron-job for daily backup at 6 PM? [y/N] " ans
-    [[ "${ans:-}" == "y" ]] && install_cron_job
+    if [[ "${ans:-}" == "y" ]]; then
+      install_cron_job || echo "WARNING: failed to install cron job (see output above)"
+    fi
   else
     echo "crontab not found - skipping schedule setup"
     echo "Install a cron package for your distro, then run ./scripts/backup.sh --configure again"
@@ -115,15 +130,20 @@ install_cron_job() {
   script_path="$(readlink -f "${BASH_SOURCE[0]}")"
   local cron_line="0 18 * * * ${script_path} run >> $(dirname "${script_path}")/backup.log 2>&1"
 
-  if crontab -u "$TARGET_USER" -l 2>/dev/null | grep -qF "$script_path run"; then
+  local crontab_cmd=(crontab)
+  if [[ "$(id -u)" -eq 0 && "$TARGET_USER" != "root" ]]; then
+    crontab_cmd=(crontab -u "$TARGET_USER")
+  fi
+
+  if "${crontab_cmd[@]}" -l 2>/dev/null | grep -qF "$script_path run"; then
     echo "Cron job already exists, skipping"
     return
   fi
 
-  (crontab -u "$TARGET_USER" -l 2>/dev/null; echo "$cron_line") | crontab -u "$TARGET_USER" -
-  echo "Cron job installed for ${TARGET_USER}: every day at 6 PM. Check with: crontab -u ${TARGET_USER} -l"
+  ("${crontab_cmd[@]}" -l 2>/dev/null || true; echo "$cron_line") | "${crontab_cmd[@]}" -
+  echo "Cron job installed for ${TARGET_USER}: every day at 6 PM. Check with: ${crontab_cmd[*]} -l"
 
-  if ! pgrep -x 'cron|crond' > /dev/null 2>&1; then
+  if ! pgrep -x 'cronie-crond' > /dev/null 2>&1 && ! pgrep -x 'crond' > /dev/null 2>&1 && ! pgrep -x 'cron' > /dev/null 2>&1; then
     echo "WARNING: crontab is installed, but no cron/crond process appears to be running"
     echo "The job will not execute until the daemon is started via your init system"
   fi

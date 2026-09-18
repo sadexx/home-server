@@ -19,7 +19,7 @@ mkdir -p \
 
 export PUID="$(id -u "$TARGET_USER")"
 export PGID="$(id -g "$TARGET_USER")"
-chown -R $PUID:$PGID data/omniroute
+chown -R "$PUID:$PGID" data/omniroute
 
 source .env
 
@@ -29,7 +29,7 @@ tailscale serve --bg --https="${PIHOLE_HTTP_PORT}" "http://127.0.0.1:${PIHOLE_HT
 tailscale serve --bg --https="${OMNIROUTE_PORT}" "http://127.0.0.1:${OMNIROUTE_PORT}"
 tailscale serve --bg --https="${NEXTCLOUD_HTTPS_PORT}" "http://127.0.0.1:${NEXTCLOUD_HTTP_PORT}"
 
-if [ -t 0 ] && ! ./backup.sh --check; then
+if [ -t 0 ] && ! ./scripts/backup.sh --check; then
   read -rp "Backups not configured. Configure now? [y/N] " ans
   [[ "${ans:-}" == "y" ]] && ./scripts/backup.sh --configure
 fi
