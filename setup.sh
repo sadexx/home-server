@@ -31,7 +31,14 @@ tailscale serve --bg --https="${NEXTCLOUD_HTTPS_PORT}" "http://127.0.0.1:${NEXTC
 
 if [ -t 0 ] && ! ./scripts/backup.sh --check; then
   read -rp "Backups not configured. Configure now? [y/N] " ans
-  [[ "${ans:-}" == "y" ]] && ./scripts/backup.sh --configure
+  if [[ "${ans:-}" == "y" ]]; then
+    ./scripts/backup.sh --configure
+
+    if [ -t 0 ] && ./scripts/restore.sh --has-snapshots; then
+      read -rp "Existing backups found in the repository. Restore data now? [y/N] " restore_ans
+      [[ "${restore_ans:-}" == "y" ]] && ./scripts/restore.sh restore
+    fi
+  fi
 fi
 
 docker compose pull
