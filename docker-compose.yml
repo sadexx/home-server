@@ -1,6 +1,6 @@
 services:
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:2.45.1
     container_name: portainer
     restart: unless-stopped
     security_opt:
@@ -14,7 +14,7 @@ services:
       - lan
 
   vaultwarden:
-    image: vaultwarden/server:latest
+    image: vaultwarden/server:1.37.3
     container_name: vaultwarden
     restart: unless-stopped
     security_opt:
@@ -32,7 +32,7 @@ services:
       - lan
 
   pihole:
-    image: pihole/pihole:latest
+    image: pihole/pihole:2026.09.0
     container_name: pihole
     restart: unless-stopped
     security_opt:
@@ -54,7 +54,7 @@ services:
       - lan
  
   omniroute:
-    image: diegosouzapw/omniroute:latest
+    image: diegosouzapw/omniroute:3.8.50
     container_name: omniroute
     restart: unless-stopped
     security_opt:
@@ -80,7 +80,7 @@ services:
       - lan
 
   nextcloud:
-    image: nextcloud:apache
+    image: nextcloud:35-apache
     container_name: nextcloud
     restart: unless-stopped
     security_opt:
@@ -113,7 +113,7 @@ services:
       - nextcloud-internal
 
   nextcloud-cron:
-    image: nextcloud:apache
+    image: nextcloud:35-apache
     container_name: nextcloud-cron
     restart: unless-stopped
     security_opt:

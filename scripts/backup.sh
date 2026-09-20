@@ -76,6 +76,18 @@ init_restic_repo() {
   return 1
 }
 
+grant_access() {
+  command -v setfacl > /dev/null || { echo "setfacl not found. Install the acl tools for your distro"; return 1; }
+
+  local dir
+  for dir in ./data/nextcloud/html ./data/nextcloud/data; do
+    [[ -d "$dir" ]] || continue
+    echo "Granting ${TARGET_USER} read access to ${dir}..."
+    sudo setfacl -R -m "u:${TARGET_USER}:rX" "$dir"
+    sudo setfacl -R -d -m "u:${TARGET_USER}:rX" "$dir"
+  done
+}
+
 configure() {
   command -v rclone > /dev/null || { echo "rclone not installed. sudo -v ; curl https://rclone.org/install.sh | sudo bash"; exit 1; }
   command -v restic > /dev/null || { echo "restic not installed. See https://restic.net/#installation"; exit 1; }
@@ -101,6 +113,8 @@ configure() {
     echo "Initializing restic-repository: ${RESTIC_REPOSITORY}"
     init_restic_repo || return 1
   fi
+
+  grant_access || return 1
 
   if command -v crontab > /dev/null; then
     read -rp "Install cron-job for daily backup at 6 PM? [y/N] " ans
@@ -149,6 +163,29 @@ install_cron_job() {
   fi
 }
 
+container_running() {
+  docker ps --format '{{.Names}}' | grep -qx "$1"
+}
+
+nextcloud_maintenance() {
+  container_running nextcloud || return 0
+  docker exec -u www-data nextcloud php occ maintenance:mode "--$1" > /dev/null
+}
+
+dump_vaultwarden() {
+  container_running vaultwarden || return 0
+
+  echo "vaultwarden backup..."
+  rm -f ./data/vaultwarden/db_*.sqlite3
+  docker exec vaultwarden /vaultwarden backup > /dev/null
+  mv ./data/vaultwarden/db_*.sqlite3 "${DUMP_DIR}/vaultwarden.sqlite3"
+}
+
+cleanup() {
+  rm -f "${DUMP_DIR}/nextcloud_db.sql" "${DUMP_DIR}/vaultwarden.sqlite3"
+  nextcloud_maintenance off || true
+}
+
 run() {
   local lock_file="/tmp/homeserver-backup.lock"
   exec 200>"$lock_file"
@@ -156,13 +193,21 @@ run() {
 
   mkdir -p "$DUMP_DIR"
 
-  trap 'rm -f "${DUMP_DIR}/nextcloud_db.sql"' EXIT
+  trap cleanup EXIT
+
+  echo "nextcloud maintenance mode on..."
+  nextcloud_maintenance on
 
   echo "pg_dump nextcloud_db..."
-  docker exec nextcloud_db pg_dump -U "${NEXTCLOUD_DB_USER}" "${NEXTCLOUD_DB_NAME}" > "${DUMP_DIR}/nextcloud_db.sql"
+  docker exec nextcloud_db pg_dump --no-owner --no-privileges -U "${NEXTCLOUD_DB_USER}" "${NEXTCLOUD_DB_NAME}" > "${DUMP_DIR}/nextcloud_db.sql"
+
+  dump_vaultwarden
 
   echo "restic backup..."
   restic backup -r "$RESTIC_REPOSITORY" "${BACKUP_PATHS[@]}"
+
+  echo "nextcloud maintenance mode off..."
+  nextcloud_maintenance off
 
   echo "restic forget --prune (retention: ${BACKUP_RETENTION_DAILY} days)..."
   restic forget -r "$RESTIC_REPOSITORY" --keep-daily "${BACKUP_RETENTION_DAILY}" --prune
@@ -171,6 +216,7 @@ run() {
 case "${1:-}" in
   --check)  check ;;
   --configure)  configure ;;
+  --grant-access)  grant_access ;;
   run)  run ;;
-  *) echo "Usage: $0 {--check|--configure|run}"; exit 1 ;;
+  *) echo "Usage: $0 {--check|--configure|--grant-access|run}"; exit 1 ;;
 esac
