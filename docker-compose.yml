@@ -44,6 +44,8 @@ services:
     environment:
       TZ: ${PIHOLE_TZ}
       FTLCONF_webserver_api_password: ${PIHOLE_ADMIN_PASSWORD}
+      # 'ALL': container must answer DNS on every iface (lan bridge + tailscale0 via host),
+      # actual exposure still restricted by PIHOLE_DNS_BIND_ADDR port binding below
       FTLCONF_dns_listeningMode: 'ALL'
     volumes:
       - ./data/pihole/etc-pihole:/etc/pihole
@@ -175,4 +177,4 @@ networks:
    nextcloud-internal:
      name: nextcloud-internal
      driver: bridge
-     internal: true
+     internal: true  # no external network access - db/redis reachable only from nextcloud containers

@@ -24,6 +24,8 @@ source .env
 
 chown -R "${PUID}:${PGID}" data/omniroute
 
+# registered before containers are up - tailscale serve just proxies to these local ports,
+# it doesn't need the target listening yet (it'll simply 502 until docker compose up below)
 tailscale serve --bg --https="${PORTAINER_HTTPS_PORT}" "https+insecure://127.0.0.1:${PORTAINER_HTTPS_PORT}"
 tailscale serve --bg --https="${VAULTWARDEN_HTTP_PORT}" "http://127.0.0.1:${VAULTWARDEN_HTTP_PORT}"
 tailscale serve --bg --https="${PIHOLE_HTTP_PORT}" "http://127.0.0.1:${PIHOLE_HTTP_PORT}"
@@ -36,6 +38,8 @@ if [ -t 0 ]; then
     [[ "${ans:-}" == "y" ]] && ./scripts/backup.sh --configure
   fi
 
+  # only offer restore on fresh installs - once data/ exists, running restore would
+  # silently overwrite it with the latest snapshot
   if [[ "$fresh_install" == "1" ]] && ./scripts/restore.sh --has-snapshots; then
     read -rp "Existing backups found in the repository. Restore data now? [y/N] " restore_ans
     [[ "${restore_ans:-}" == "y" ]] && ./scripts/restore.sh restore

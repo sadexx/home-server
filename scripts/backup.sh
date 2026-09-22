@@ -29,6 +29,8 @@ is_rclone_remote_configured() {
 }
 
 is_restic_repo_initialized() {
+  # succeeds only if repo exists AND RESTIC_PASSWORD decrypts it - wrong password looks
+  # the same as "not initialized" to this check
   restic snapshots -r "$RESTIC_REPOSITORY" > /dev/null 2>&1
 }
 
@@ -79,6 +81,9 @@ init_restic_repo() {
 grant_access() {
   command -v setfacl > /dev/null || { echo "setfacl not found. Install the acl tools for your distro"; return 1; }
 
+  # nextcloud data is owned by container uid 33 (www-data) - chown-ing it to TARGET_USER
+  # would break nextcloud on next start, so grant read access via ACL instead (-d = default
+  # ACL, applies to files created after this run too, e.g. by nextcloud itself)
   local dir
   for dir in ./data/nextcloud/html ./data/nextcloud/data; do
     [[ -d "$dir" ]] || continue
@@ -176,6 +181,8 @@ dump_vaultwarden() {
   container_running vaultwarden || return 0
 
   echo "vaultwarden backup..."
+  # vaultwarden names its backup file db_<timestamp>.sqlite3 - clear stale ones first
+  # so the mv glob below can't match a leftover from a previous failed run
   rm -f ./data/vaultwarden/db_*.sqlite3
   docker exec vaultwarden /vaultwarden backup > /dev/null
   mv ./data/vaultwarden/db_*.sqlite3 "${DUMP_DIR}/vaultwarden.sqlite3"
@@ -193,6 +200,8 @@ run() {
 
   mkdir -p "$DUMP_DIR"
 
+  # runs on any exit (success, error, or interrupt) - guarantees nextcloud maintenance
+  # mode gets turned back off even if pg_dump/restic fails partway through
   trap cleanup EXIT
 
   echo "nextcloud maintenance mode on..."

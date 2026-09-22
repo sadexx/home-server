@@ -16,6 +16,7 @@ DUMP_DIR="./data/_pg_dump"
 DB_DUMP_FILE="${DUMP_DIR}/nextcloud_db.sql"
 
 has_snapshots() {
+  # counting '"id"' occurrences instead of parsing json properly - avoids a jq dependency
   local count
   count="$(restic snapshots -r "$RESTIC_REPOSITORY" --json 2>/dev/null | grep -c '"id"' || true)"
   [[ "$count" -gt 0 ]]
@@ -25,10 +26,10 @@ fix_ownership() {
   echo "Fixing ownership after restore..."
 
   if [[ -d ./data/nextcloud_db ]]; then
-    sudo chown -R 70:70 ./data/nextcloud_db
+    sudo chown -R 70:70 ./data/nextcloud_db  # 70 = postgres uid/gid inside postgres:16-alpine image
   fi
 
-  sudo chown -R 33:33 ./data/nextcloud/html
+  sudo chown -R 33:33 ./data/nextcloud/html  # 33 = www-data uid/gid inside nextcloud:apache image
   sudo chown -R 33:33 ./data/nextcloud/data
   
   chown -R "${PUID}:${PGID}" ./data/omniroute
@@ -65,6 +66,9 @@ restore_vaultwarden_db() {
 fix_nextcloud_db_credentials() {
   [[ -f ./data/nextcloud/html/config/config.php ]] || return 0
 
+  # config.php in the snapshot has the OLD db password baked in and maintenance=true
+  # (set by nextcloud_maintenance on during backup) - both must be corrected before
+  # nextcloud can start against the freshly-imported db below
   echo "Pointing nextcloud config at database user ${NEXTCLOUD_DB_USER} and disabling maintenance mode..."
   docker compose run --rm -T --no-deps -u www-data --entrypoint php \
     -e DB_USER="$NEXTCLOUD_DB_USER" -e DB_PASS="$NEXTCLOUD_DB_PASSWORD" nextcloud \
